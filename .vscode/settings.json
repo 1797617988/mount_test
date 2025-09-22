@@ -1,0 +1,30 @@
+{
+    "workbench.colorCustomizations": {
+        "activityBar.activeBackground": "#c70d01",
+        "activityBar.background": "#c70d01",
+        "activityBar.foreground": "#e7e7e7",
+        "activityBar.inactiveForeground": "#e7e7e799",
+        "activityBarBadge.background": "#003f04",
+        "activityBarBadge.foreground": "#e7e7e7",
+        "commandCenter.border": "#e7e7e799",
+        "sash.hoverBorder": "#c70d01",
+        "statusBar.background": "#940a01",
+        "statusBar.foreground": "#e7e7e7",
+        "statusBarItem.hoverBackground": "#c70d01",
+        "statusBarItem.remoteBackground": "#940a01",
+        "statusBarItem.remoteForeground": "#e7e7e7",
+        "titleBar.activeBackground": "#940a01",
+        "titleBar.activeForeground": "#e7e7e7",
+        "titleBar.inactiveBackground": "#940a0199",
+        "titleBar.inactiveForeground": "#e7e7e799"
+    },
+    "peacock.remoteColor": "#940a01",
+    "files.associations": {
+        "pthread.h": "c",
+        "stdbool.h": "c",
+        "statvfs.h": "c",
+        "dirent.h": "c",
+        "types.h": "c",
+        "netlink.h": "c"
+    }
+}
