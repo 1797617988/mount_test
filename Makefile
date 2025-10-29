@@ -108,6 +108,7 @@ INCDIRS		=	-I$(HISI_SDK_INC_DIR) \
 				-I$(LIVE555_INC_DIR)/mediaServer \
 				-I$(PQ_INC_DIR) \
 				-I$(OSD_INC_DIR) \
+				-I$(OSD_INC_DIR)/SDL2 \
 				-I$(INI_INC_DIR) \
 				-I./app \
 				-I./bll \
@@ -143,6 +144,7 @@ INCDIRS		=	-I$(HISI_SDK_INC_DIR) \
 				-I./sys/storage \
 				-I./sys/config_ini \
 				-I./link/net_ex_link \
+				-I./link/mavlink \
 				-I./bll/zoom \
 				-I./bll/gimbal 
 				
@@ -183,6 +185,7 @@ SRCDIRS		=	./ \
 				./sys/storage \
 				./sys/config_ini \
 				./link/net_ex_link \
+				./link/mavlink \
 				./bll/zoom \
 				./bll/gimbal 
 
@@ -304,10 +307,13 @@ SRCDIRS		=	./ \
 # PQ_LIBA := $(PQ_LIB_DIR)/lib_pqcontrol.a
 # PQ_LIBA += $(PQ_LIB_DIR)/libbin.a
 
-# OSD_LIBA := $(OSD_LIB_DIR)/libfreetype.a
-# OSD_LIBA += $(OSD_LIB_DIR)/libSDL_ttf.a
-# OSD_LIBA += $(OSD_LIB_DIR)/libSDL.a
-# OSD_LIBA += $(OSD_LIB_DIR)/libSDLmain.a
+# OSD库文件
+OSD_LIBA := $(OSD_LIB_DIR)/libfreetype.a
+OSD_LIBA += $(OSD_LIB_DIR)/libSDL2.a
+OSD_LIBA += $(OSD_LIB_DIR)/libSDL2_ttf.a
+
+# MAVLink库文件
+MAVLINK_LIBA := -L./link/mavlink
 
 # INI_LIBA := $(INI_LIB_DIR)/libiniparser.a
 

@@ -1,0 +1,20 @@
+{
+  "path": "/home/lc/mount_test/web-demo",
+  "desc": "这是一个基于嵌入式OSD系统的Web模拟版本，展示了文本渲染的核心功能，包括多行文本渲染、对齐方式、描边效果等",
+  "id": "1ff1c3ac44d142559b2666cb5fc82f30",
+  "data": {
+    "spaceKey": "1ff1c3ac44d142559b2666cb5fc82f30",
+    "connections": {
+      "webIDE": "https://1ff1c3ac44d142559b2666cb5fc82f30.codebuddy.cloudstudio.club",
+      "preview": "https://1ff1c3ac44d142559b2666cb5fc82f30--{port}.codebuddy.cloudstudio.club",
+      "api": "https://1ff1c3ac44d142559b2666cb5fc82f30--api.codebuddy.cloudstudio.club",
+      "pty": "https://1ff1c3ac44d142559b2666cb5fc82f30--pty.codebuddy.cloudstudio.club"
+    }
+  },
+  "config": {
+    "api": "https://1ff1c3ac44d142559b2666cb5fc82f30--api.codebuddy.cloudstudio.club",
+    "pty": "https://1ff1c3ac44d142559b2666cb5fc82f30--pty.codebuddy.cloudstudio.club",
+    "region": "ap-shanghai",
+    "spaceKey": "1ff1c3ac44d142559b2666cb5fc82f30"
+  }
+}
