@@ -33,9 +33,7 @@ int mavlink_udp_init(void);
 int mavlink_udp_main(void);
 void mavlink_udp_deinit(void);
 
-// 串口模块函数声明
-int mavlink_uart_init(void);
-int mavlink_uart_main(void);
+
 
 
 // 消息发送函数声明
@@ -126,12 +124,12 @@ int mavlink_main(void)
     camera_button_pressed = false;
     
     //启动UDP通信线程
-    g_udp_running = true;
-    if (pthread_create(&g_udp_thread, NULL, udp_thread_func, NULL) != 0) {
-        ss_log_e("Failed to create UDP communication thread");
-        g_udp_running = false;
-        return -1;
-    }
+    // g_udp_running = true;
+    // if (pthread_create(&g_udp_thread, NULL, udp_thread_func, NULL) != 0) {
+    //     ss_log_e("Failed to create UDP communication thread");
+    //     g_udp_running = false;
+    //     return -1;
+    // }
     
     // 启动串口通信线程
     g_uart_running = true;
@@ -155,7 +153,7 @@ int mavlink_main(void)
     // 等待通信线程结束
     while (g_udp_running || g_uart_running) {
         sleep(1);
-        
+   #if 0      
         // 检查线程状态
         if (g_udp_running) {
             int ret = pthread_join(g_udp_thread, NULL);
@@ -172,6 +170,7 @@ int mavlink_main(void)
                 ss_log_i("UART communication thread finished");
             }
         }
+    #endif
     }
     
     // 清理线程池
@@ -216,30 +215,30 @@ void mavlink_stop(void)
  */
 void send_autopilot_heartbeat(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len)
 {
-    mavlink_message_t message;
+    // mavlink_message_t message;
     
-    // 创建飞控心跳包（系统ID=1，组件ID=1）
-    mavlink_msg_heartbeat_pack_chan(
-        autopilot_systemid,            // 系统ID = 1 (飞控)
-        MAV_COMP_ID_AUTOPILOT1,        // 组件ID = 1 (主飞控)
-        MAVLINK_COMM_0,                // 通信通道
-        &message,                       // 消息对象
-        MAV_TYPE_QUADROTOR,            // 飞行器类型 - 四旋翼
-        MAV_AUTOPILOT_PX4,             // 自动驾驶仪类型 - PX4
-        MAV_MODE_FLAG_CUSTOM_MODE_ENABLED | MAV_MODE_FLAG_STABILIZE_ENABLED | MAV_MODE_FLAG_GUIDED_ENABLED | MAV_MODE_FLAG_AUTO_ENABLED,  // 基础模式
-        0,                              // 自定义模式
-        MAV_STATE_STANDBY               // 系统状态 - 待机
-    );
+    // // 创建飞控心跳包（系统ID=1，组件ID=1）
+    // mavlink_msg_heartbeat_pack_chan(
+    //     autopilot_systemid,            // 系统ID = 1 (飞控)
+    //     MAV_COMP_ID_AUTOPILOT1,        // 组件ID = 1 (主飞控)
+    //     MAVLINK_COMM_0,                // 通信通道
+    //     &message,                       // 消息对象
+    //     MAV_TYPE_QUADROTOR,            // 飞行器类型 - 四旋翼
+    //     MAV_AUTOPILOT_PX4,             // 自动驾驶仪类型 - PX4
+    //     MAV_MODE_FLAG_CUSTOM_MODE_ENABLED | MAV_MODE_FLAG_STABILIZE_ENABLED | MAV_MODE_FLAG_GUIDED_ENABLED | MAV_MODE_FLAG_AUTO_ENABLED,  // 基础模式
+    //     0,                              // 自定义模式
+    //     MAV_STATE_STANDBY               // 系统状态 - 待机
+    // );
     
-    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    const int len = mavlink_msg_to_send_buffer(buffer, &message);
+    // uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
+    // const int len = mavlink_msg_to_send_buffer(buffer, &message);
     
-    int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
-    if (ret != len) {
-        ss_log_e("Failed to send autopilot heartbeat: %s", strerror(errno));
-    } else {
-        ss_log_d("Sent simulated autopilot heartbeat (sysid=1, compid=1)");
-    }
+    // int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
+    // if (ret != len) {
+    //     ss_log_e("Failed to send autopilot heartbeat: %s", strerror(errno));
+    // } else {
+    //     ss_log_d("Sent simulated autopilot heartbeat (sysid=1, compid=1)");
+    // }
 }
 
 /**
@@ -267,12 +266,12 @@ void send_heartbeat(int socket_fd, const struct sockaddr_in* src_addr, socklen_t
     uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
     const int len = mavlink_msg_to_send_buffer(buffer, &message);
 
-    int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)src_addr, src_addr_len);
-    if (ret != len) {
-        ss_log_e("Failed to send heartbeat: %s", strerror(errno));
-    } else {
-        ss_log_d("Sent heartbeat (sysid=%d, compid=%d)", systemid, camera_component_id);
-    }
+    // int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)src_addr, src_addr_len);
+    // if (ret != len) {
+    //     ss_log_e("Failed to send heartbeat: %s", strerror(errno));
+    // } else {
+    //     ss_log_d("Sent heartbeat (sysid=%d, compid=%d)", systemid, camera_component_id);
+    // }
 }
 
 /**

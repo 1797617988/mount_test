@@ -35,7 +35,7 @@ extern bool camera_button_pressed;        // 相机按键状态变量
 
 // 消息发送函数声明
 void send_autopilot_heartbeat(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-void send_heartbeat(int socket_fd, const struct sockaddr_in* src_addr, socklen_t src_addr_len);
+extern void send_heartbeat(int socket_fd, const struct sockaddr_in* src_addr, socklen_t src_addr_len);
 void send_command_ack(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len, uint16_t command, uint8_t result);
 void send_camera_information(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
 void send_camera_capture_status(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
@@ -126,9 +126,12 @@ static void* uart_receive_thread(void* arg) {
     while (g_uart_thread_running) {
         // 读取串口数据
         ssize_t n = read(g_uart_fd, buffer, sizeof(buffer));
+        // HexPrintf(buffer, n);
         
         if (n > 0) {
             // 更新QGC连接状态
+            HexPrintf(buffer, n);
+            #if 0
             g_uart_qgc_connected = true;
             g_uart_last_qgc_message = time(NULL);
             
@@ -182,8 +185,10 @@ static void* uart_receive_thread(void* arg) {
                 break;
             }
         }
-        
+        #endif
+        }
         usleep(10000); // 10ms延迟，避免CPU占用过高
+
     }
     
     ss_log_i("UART receive thread stopped");
@@ -237,7 +242,7 @@ int mavlink_uart_main(void) {
         ss_log_e("Failed to start UART receive thread");
         return -1;
     }
-    
+  
     // 初始化状态变量
     camera_button_pressed = false;
     simulate_autopilot = true;  // 默认启动模拟飞控
@@ -245,6 +250,7 @@ int mavlink_uart_main(void) {
     time_t last_broadcast = 0;
     
     while (g_uart_thread_running) {
+        #if 0
         time_t current_time = time(NULL);
         
         // 定期发送状态信息
@@ -324,7 +330,7 @@ int mavlink_uart_main(void) {
             g_uart_real_autopilot_detected = false;
             ss_log_i("Real autopilot connection lost via UART");
         }
-        
+        #endif
         usleep(100000); // 100ms延迟，避免CPU占用过高
     }
     

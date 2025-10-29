@@ -9,7 +9,9 @@
 #include <sys/socket.h>
 #include <pthread.h>
 #include <time.h>
-
+#include "mavlink_udp.h"
+#include "ss_log.h"
+#include "mavlink_init.h"
 /* ========================== 1. 全局变量定义 ============================ */
 
 // UDP通信相关变量
@@ -48,7 +50,7 @@ static void* udp_receive_thread(void* arg) {
             g_udp_qgc_connected = true;
             g_udp_last_qgc_message = time(NULL);
             
-            ss_log_i("Received UDP packet, Length:%d", n);
+            ss_log_i("Received UDP packet, Length:%ld", n);
             
             mavlink_message_t message;
             mavlink_status_t status;

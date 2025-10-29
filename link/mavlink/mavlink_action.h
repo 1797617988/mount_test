@@ -100,9 +100,7 @@ int mavlink_uart_init(void);
 void mavlink_udp_deinit(void);
 
 
-/* 主循环函数 */
-int mavlink_udp_main(void);
-int mavlink_uart_main(void);
+
 
 /* 线程池支持函数 */
 int mavlink_threadpool_init_simple(void);

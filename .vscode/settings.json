@@ -25,6 +25,9 @@
         "statvfs.h": "c",
         "dirent.h": "c",
         "types.h": "c",
-        "netlink.h": "c"
+        "netlink.h": "c",
+        "setjmp.h": "c",
+        "mavlink_uart.h": "c",
+        "ss_log.h": "c"
     }
 }
