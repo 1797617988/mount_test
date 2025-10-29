@@ -12,6 +12,7 @@
 #include "mavlink_udp.h"
 #include "ss_log.h"
 #include "mavlink_init.h"
+
 /* ========================== 1. 全局变量定义 ============================ */
 
 // UDP通信相关变量
@@ -36,7 +37,7 @@ static bool g_udp_use_mavlink_v1 = false;
 
 /* UDP数据接收线程函数 */
 static void* udp_receive_thread(void* arg) {
-    ss_log_i("UDP receive thread started");
+    ss_log_i("UDP receive thread started\n");
     
     char buffer[2048]; // enough for MTU 1500 bytes
     
@@ -50,7 +51,7 @@ static void* udp_receive_thread(void* arg) {
             g_udp_qgc_connected = true;
             g_udp_last_qgc_message = time(NULL);
             
-            ss_log_i("Received UDP packet, Length:%ld", n);
+            ss_log_i("Received UDP packet, Length:%ld\n", n);
             
             mavlink_message_t message;
             mavlink_status_t status;
@@ -59,26 +60,26 @@ static void* udp_receive_thread(void* arg) {
             for (ssize_t i = 0; i < n; ++i) {
                 if (mavlink_parse_char(MAVLINK_COMM_0, buffer[i], &message, &status) == 1) {
                     
-                    ss_log_i("Received MAVLink message %d (0x%02X) from %d/%d",
+                    ss_log_i("Received MAVLink message %d (0x%02X) from %d/%d\n",
                         message.msgid, message.msgid, message.sysid, message.compid);
 
                     // 检测QGC连接 - 当收到来自QGC的消息时设置连接状态
                     if (!g_udp_qgc_connected) {
                         g_udp_qgc_connected = true;
-                        ss_log_i("✅ QGC connected via UDP! Starting camera identification process");
-                        ss_log_i("✅ QGC IP: %s, Port: %d", 
+                        ss_log_i("✅ QGC connected via UDP! Starting camera identification process\n");
+                        ss_log_i("✅ QGC IP: %s, Port: %d\n", 
                                 inet_ntoa(g_udp_src_addr.sin_addr), ntohs(g_udp_src_addr.sin_port));
                         
                         // 立即发送相机信息包让QGC识别相机
                         send_camera_information(g_udp_socket_fd, &g_udp_src_addr, g_udp_src_addr_len);
-                        ss_log_i("📷 Sent camera information to QGC via UDP");
+                        ss_log_i("📷 Sent camera information to QGC via UDP\n");
                     }
                     
                     // 检测是否为真实飞控心跳（系统ID=1，组件ID=1）
                     if (message.msgid == MAVLINK_MSG_ID_HEARTBEAT && message.sysid == 1 && message.compid == 1) {
                         g_udp_real_autopilot_detected = true;
                         g_udp_last_real_autopilot_hb = time(NULL);
-                        ss_log_d("Real autopilot heartbeat detected via UDP");
+                        ss_log_d("Real autopilot heartbeat detected via UDP\n");
                     }
                     
                     // 检测协议版本
@@ -94,7 +95,7 @@ static void* udp_receive_thread(void* arg) {
                         // 处理命令长消息
                         mavlink_command_long_t cmd;
                         mavlink_msg_command_long_decode(&message, &cmd);
-                        ss_log_i("Received COMMAND_LONG: command=%d", cmd.command);
+                        ss_log_i("Received COMMAND_LONG: command=%d\n", cmd.command);
                         
                         // 这里可以调用具体的命令处理函数
                         // 例如：handle_command_long(&message);
@@ -103,7 +104,7 @@ static void* udp_receive_thread(void* arg) {
             }
         } else if (n < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                ss_log_e("UDP recvfrom error: %s", strerror(errno));
+                ss_log_e("UDP recvfrom error: %s\n", strerror(errno));
                 break;
             }
         }
@@ -111,26 +112,26 @@ static void* udp_receive_thread(void* arg) {
         usleep(10000); // 10ms延迟，避免CPU占用过高
     }
     
-    ss_log_i("UDP receive thread stopped");
+    ss_log_i("UDP receive thread stopped\n");
     return NULL;
 }
 
 /* 启动UDP接收线程 */
 static int start_udp_receive_thread(void) {
     if (g_udp_thread_running) {
-        ss_log_w("UDP receive thread already running");
+        ss_log_w("UDP receive thread already running\n");
         return 0;
     }
     
     g_udp_thread_running = true;
     
     if (pthread_create(&g_udp_receive_thread, NULL, udp_receive_thread, NULL) != 0) {
-        ss_log_e("Failed to create UDP receive thread");
+        ss_log_e("Failed to create UDP receive thread\n");
         g_udp_thread_running = false;
         return -1;
     }
     
-    ss_log_i("UDP receive thread started successfully");
+    ss_log_i("UDP receive thread started successfully\n");
     return 0;
 }
 
@@ -147,7 +148,7 @@ static int stop_udp_receive_thread(void) {
         g_udp_receive_thread = 0;
     }
     
-    ss_log_i("UDP receive thread stopped");
+    ss_log_i("UDP receive thread stopped\n");
     return 0;
 }
 
@@ -155,11 +156,11 @@ static int stop_udp_receive_thread(void) {
 
 /* UDP主循环函数 */
 int mavlink_udp_main(void) {
-    ss_log_i("Entering UDP main loop, waiting for MAVLink messages...");
+    ss_log_i("Entering UDP main loop, waiting for MAVLink messages...\n");
     
     // 启动接收线程
     if (start_udp_receive_thread() != 0) {
-        ss_log_e("Failed to start UDP receive thread");
+        ss_log_e("Failed to start UDP receive thread\n");
         return -1;
     }
     
@@ -192,26 +193,26 @@ int mavlink_udp_main(void) {
                 if (g_udp_qgc_connected && (current_time - g_udp_last_qgc_message) >= 10) {
                     g_udp_qgc_connected = false;
                     camera_button_pressed = false;  // QGC断开，重置按键状态
-                    ss_log_i("QGC disconnected via UDP, resetting camera button state");
+                    ss_log_i("QGC disconnected via UDP, resetting camera button state\n");
                 }
                 
                 // 模拟飞控控制逻辑
                 if (g_udp_real_autopilot_detected) {
                     // 有真实飞控，不需要模拟飞控，但相机消息必须继续发送
                     if (simulate_autopilot) {
-                        ss_log_i("Real autopilot detected via UDP, stopping simulation but continuing camera messages");
+                        ss_log_i("Real autopilot detected via UDP, stopping simulation but continuing camera messages\n");
                         simulate_autopilot = false;
                     }
                 } else if (camera_button_pressed) {
                     // 相机按键被按下，停止模拟
                     if (simulate_autopilot) {
-                        ss_log_i("Camera button pressed via UDP, stopping simulation");
+                        ss_log_i("Camera button pressed via UDP, stopping simulation\n");
                         simulate_autopilot = false;
                     }
                 } else if (!g_udp_qgc_connected) {
                     // QGC断开连接，重新启动模拟
                     if (!simulate_autopilot) {
-                        ss_log_i("QGC disconnected via UDP, restarting simulation");
+                        ss_log_i("QGC disconnected via UDP, restarting simulation\n");
                         simulate_autopilot = true;
                     }
                 }
@@ -245,7 +246,7 @@ int mavlink_udp_main(void) {
         // 检查真实飞控是否断开连接（30秒内没有收到心跳）
         if (g_udp_real_autopilot_detected && (current_time - g_udp_last_real_autopilot_hb) >= 30) {
             g_udp_real_autopilot_detected = false;
-            ss_log_i("Real autopilot connection lost via UDP");
+            ss_log_i("Real autopilot connection lost via UDP\n");
         }
         
         usleep(100000); // 100ms延迟，避免CPU占用过高
@@ -254,7 +255,7 @@ int mavlink_udp_main(void) {
     // 停止接收线程
     stop_udp_receive_thread();
     
-    ss_log_i("UDP main loop exited");
+    ss_log_i("UDP main loop exited\n");
     return 0;
 }
 
@@ -266,7 +267,7 @@ int mavlink_udp_init(void) {
     g_udp_socket_fd = socket(PF_INET, SOCK_DGRAM, 0);
 
     if (g_udp_socket_fd < 0) {
-        ss_log_e("UDP socket error: %s", strerror(errno));
+        ss_log_e("UDP socket error: %s\n", strerror(errno));
         return -1;
     }
 

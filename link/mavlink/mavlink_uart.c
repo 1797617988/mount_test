@@ -36,7 +36,7 @@ extern bool camera_button_pressed;        // 相机按键状态变量
 // 消息发送函数声明
 void send_autopilot_heartbeat(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
 extern void send_heartbeat(int socket_fd, const struct sockaddr_in* src_addr, socklen_t src_addr_len);
-void send_command_ack(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len, uint16_t command, uint8_t result);
+
 void send_camera_information(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
 void send_camera_capture_status(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
 void send_video_stream_status(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
@@ -50,7 +50,7 @@ int mavlink_uart_init(void) {
     // 打开串口设备
     g_uart_fd = open("/dev/ttyAMA5", O_RDWR | O_NOCTTY | O_NDELAY);
     if (g_uart_fd < 0) {
-        ss_log_e("Failed to open UART device /dev/ttyAMA5: %s", strerror(errno));
+        ss_log_e("Failed to open UART device /dev/ttyAMA5: %s\n", strerror(errno));
         return -1;
     }
     
@@ -91,7 +91,7 @@ int mavlink_uart_init(void) {
     
     // 应用配置
     if (tcsetattr(g_uart_fd, TCSANOW, &options) != 0) {
-        ss_log_e("Failed to set UART attributes: %s", strerror(errno));
+        ss_log_e("Failed to set UART attributes: %s\n", strerror(errno));
         close(g_uart_fd);
         g_uart_fd = -1;
         return -1;
@@ -100,7 +100,7 @@ int mavlink_uart_init(void) {
     // 清空缓冲区
     tcflush(g_uart_fd, TCIOFLUSH);
     
-    ss_log_i("UART communication initialized successfully: /dev/ttyAMA5, 115200 baud");
+    ss_log_i("UART communication initialized successfully: /dev/ttyAMA5, 115200 baud\n");
     return 0;
 }
 
@@ -131,7 +131,7 @@ static void* uart_receive_thread(void* arg) {
         if (n > 0) {
             // 更新QGC连接状态
             HexPrintf(buffer, n);
-            #if 0
+            //#if 0
             g_uart_qgc_connected = true;
             g_uart_last_qgc_message = time(NULL);
             
@@ -145,12 +145,12 @@ static void* uart_receive_thread(void* arg) {
                     // 检测QGC连接 - 当收到来自QGC的消息时设置连接状态
                     if (!g_uart_qgc_connected) {
                         g_uart_qgc_connected = true;
-                        ss_log_i("✅ QGC connected via UART! Starting camera identification process");
+                        ss_log_i("✅ QGC connected via UART! Starting camera identification process\n");
                         
                         // 立即发送相机信息包让QGC识别相机
                         // 注意：串口通信没有目标地址，这里使用NULL
                         send_camera_information(g_uart_fd, NULL, 0);
-                        ss_log_i("📷 Sent camera information to QGC via UART");
+                        ss_log_i("📷 Sent camera information to QGC via UART\n");
                     }
                     
                     // 检测是否为真实飞控心跳（系统ID=1，组件ID=1）
@@ -185,8 +185,8 @@ static void* uart_receive_thread(void* arg) {
                 break;
             }
         }
-        #endif
-        }
+        //#endif
+        
         usleep(10000); // 10ms延迟，避免CPU占用过高
 
     }

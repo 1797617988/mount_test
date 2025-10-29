@@ -10,11 +10,13 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <time.h>
-#include"ss_log.h"
+#include "ss_log.h"
 #include <mavlink_v2/common/mavlink.h>
 #include "mavlink_action.h"
 #include "mavlink_threadpool.h"
 #include "mavlink_uart.h"
+#include "mavlink_udp.h"
+#include "mavlink_init.h"
 // 使用MAVLink协议为独立相机推荐的组件ID范围 (100-106)
 #define CAMERA_COMPONENT_ID MAV_COMP_ID_CAMERA // 100
 
@@ -58,11 +60,11 @@ static bool g_uart_running = false;
 
 /* UDP通信线程 */
 static void* udp_thread_func(void* arg) {
-    ss_log_i("UDP communication thread started");
+    ss_log_i("UDP communication thread started\n");
     
     // 初始化UDP通信
     if (mavlink_udp_init() != 0) {
-        ss_log_e("Failed to initialize UDP communication");
+        ss_log_e("Failed to initialize UDP communication\n");
         return NULL;
     }
     
@@ -72,17 +74,17 @@ static void* udp_thread_func(void* arg) {
     // 清理UDP通信
     mavlink_udp_deinit();
     
-    ss_log_i("UDP communication thread stopped");
+    ss_log_i("UDP communication thread stopped\n");
     return NULL;
 }
 
 /* 串口通信线程 */
 static void* uart_thread_func(void* arg) {
-    ss_log_i("UART communication thread started");
+    ss_log_i("UART communication thread started\n");
     
     // 初始化串口通信
     if (mavlink_uart_init() != 0) {
-        ss_log_e("Failed to initialize UART communication");
+        ss_log_e("Failed to initialize UART communication\n");
         return NULL;
     }
     
@@ -92,93 +94,10 @@ static void* uart_thread_func(void* arg) {
     // 清理串口通信
     mavlink_uart_deinit();
     
-    ss_log_i("UART communication thread stopped");
+    ss_log_i("UART communication thread stopped\n");
     return NULL;
 }
 
-/* ========================== 3. 总调度器函数 ============================ */
-
-/**
- * @brief MAVLink通信总调度器主函数
- * 
- * 这个函数是MAVLink通信的入口点，负责：
- * 1. 初始化线程池
- * 2. 启动UDP通信线程
- * 3. 启动串口通信线程
- * 4. 等待通信线程结束
- * 
- * @return int 0表示成功，负数表示失败
- */
-int mavlink_main(void)
-{
-    ss_log_i("MAVLink communication scheduler starting...");
-    
-    // 初始化线程池
-    if (mavlink_threadpool_init_simple() != 0) {
-        ss_log_e("Failed to initialize thread pool, continuing with synchronous processing");
-    }
-    
-    // 初始化状态变量
-    current_camera_mode = 0; // 默认正常模式
-    simulate_autopilot = true;  // 默认启动模拟飞控
-    camera_button_pressed = false;
-    
-    //启动UDP通信线程
-    // g_udp_running = true;
-    // if (pthread_create(&g_udp_thread, NULL, udp_thread_func, NULL) != 0) {
-    //     ss_log_e("Failed to create UDP communication thread");
-    //     g_udp_running = false;
-    //     return -1;
-    // }
-    
-    // 启动串口通信线程
-    g_uart_running = true;
-    if (pthread_create(&g_uart_thread, NULL, uart_thread_func, NULL) != 0) {
-        ss_log_e("Failed to create UART communication thread");
-        g_uart_running = false;
-        
-        // 停止UDP线程
-        g_udp_running = false;
-        if (g_udp_thread) {
-            pthread_join(g_udp_thread, NULL);
-        }
-        
-        return -1;
-    }
-    
-    ss_log_i("✅ MAVLink communication scheduler started successfully");
-    ss_log_i("✅ UDP communication: port 14550");
-    ss_log_i("✅ UART communication: /dev/ttyAMA5, 115200 baud");
-    
-    // 等待通信线程结束
-    while (g_udp_running || g_uart_running) {
-        sleep(1);
-   #if 0      
-        // 检查线程状态
-        if (g_udp_running) {
-            int ret = pthread_join(g_udp_thread, NULL);
-            if (ret == 0) {
-                g_udp_running = false;
-                ss_log_i("UDP communication thread finished");
-            }
-        }
-        
-        if (g_uart_running) {
-            int ret = pthread_join(g_uart_thread, NULL);
-            if (ret == 0) {
-                g_uart_running = false;
-                ss_log_i("UART communication thread finished");
-            }
-        }
-    #endif
-    }
-    
-    // 清理线程池
-    mavlink_threadpool_cleanup();
-    
-    ss_log_i("MAVLink communication scheduler stopped");
-    return 0;
-}
 
 /**
  * @brief 停止MAVLink通信
@@ -187,7 +106,7 @@ int mavlink_main(void)
  */
 void mavlink_stop(void)
 {
-    ss_log_i("Stopping MAVLink communication...");
+    ss_log_i("Stopping MAVLink communication...\n");
     
     // 设置停止标志
     g_udp_running = false;
@@ -204,7 +123,7 @@ void mavlink_stop(void)
         g_uart_thread = 0;
     }
     
-    ss_log_i("MAVLink communication stopped");
+    ss_log_i("MAVLink communication stopped\n");
 }
 
 /* ========================== 4. 消息发送函数实现 ============================ */
@@ -215,30 +134,30 @@ void mavlink_stop(void)
  */
 void send_autopilot_heartbeat(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len)
 {
-    // mavlink_message_t message;
+    mavlink_message_t message;
     
-    // // 创建飞控心跳包（系统ID=1，组件ID=1）
-    // mavlink_msg_heartbeat_pack_chan(
-    //     autopilot_systemid,            // 系统ID = 1 (飞控)
-    //     MAV_COMP_ID_AUTOPILOT1,        // 组件ID = 1 (主飞控)
-    //     MAVLINK_COMM_0,                // 通信通道
-    //     &message,                       // 消息对象
-    //     MAV_TYPE_QUADROTOR,            // 飞行器类型 - 四旋翼
-    //     MAV_AUTOPILOT_PX4,             // 自动驾驶仪类型 - PX4
-    //     MAV_MODE_FLAG_CUSTOM_MODE_ENABLED | MAV_MODE_FLAG_STABILIZE_ENABLED | MAV_MODE_FLAG_GUIDED_ENABLED | MAV_MODE_FLAG_AUTO_ENABLED,  // 基础模式
-    //     0,                              // 自定义模式
-    //     MAV_STATE_STANDBY               // 系统状态 - 待机
-    // );
+    // 创建飞控心跳包（系统ID=1，组件ID=1）
+    mavlink_msg_heartbeat_pack_chan(
+        autopilot_systemid,            // 系统ID = 1 (飞控)
+        MAV_COMP_ID_AUTOPILOT1,        // 组件ID = 1 (主飞控)
+        MAVLINK_COMM_0,                // 通信通道
+        &message,                       // 消息对象
+        MAV_TYPE_QUADROTOR,            // 飞行器类型 - 四旋翼
+        MAV_AUTOPILOT_PX4,             // 自动驾驶仪类型 - PX4
+        MAV_MODE_FLAG_CUSTOM_MODE_ENABLED | MAV_MODE_FLAG_STABILIZE_ENABLED | MAV_MODE_FLAG_GUIDED_ENABLED | MAV_MODE_FLAG_AUTO_ENABLED,  // 基础模式
+        0,                              // 自定义模式
+        MAV_STATE_STANDBY               // 系统状态 - 待机
+    );
     
-    // uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    // const int len = mavlink_msg_to_send_buffer(buffer, &message);
+    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
+    const int len = mavlink_msg_to_send_buffer(buffer, &message);
     
-    // int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
-    // if (ret != len) {
-    //     ss_log_e("Failed to send autopilot heartbeat: %s", strerror(errno));
-    // } else {
-    //     ss_log_d("Sent simulated autopilot heartbeat (sysid=1, compid=1)");
-    // }
+    int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
+    if (ret != len) {
+        ss_log_e("Failed to send autopilot heartbeat: %s", strerror(errno));
+    } else {
+        ss_log_d("Sent simulated autopilot heartbeat (sysid=1, compid=1)");
+    }
 }
 
 /**
@@ -266,12 +185,12 @@ void send_heartbeat(int socket_fd, const struct sockaddr_in* src_addr, socklen_t
     uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
     const int len = mavlink_msg_to_send_buffer(buffer, &message);
 
-    // int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)src_addr, src_addr_len);
-    // if (ret != len) {
-    //     ss_log_e("Failed to send heartbeat: %s", strerror(errno));
-    // } else {
-    //     ss_log_d("Sent heartbeat (sysid=%d, compid=%d)", systemid, camera_component_id);
-    // }
+    int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)src_addr, src_addr_len);
+    if (ret != len) {
+        ss_log_e("Failed to send heartbeat: %s", strerror(errno));
+    } else {
+        ss_log_d("Sent heartbeat (sysid=%d, compid=%d)", systemid, camera_component_id);
+    }
 }
 
 /**
@@ -568,3 +487,93 @@ void send_camera_settings(int socket_fd, const struct sockaddr_in* dest_addr, so
         ss_log_i("Sent camera mode settings (current mode: %d, mode_id: %d)", current_camera_mode, camera_settings.mode_id);
     }
 }
+
+
+
+
+/* ========================== 3. 总调度器函数 ============================ */
+
+/**
+ * @brief MAVLink通信总调度器主函数
+ * 
+ * 这个函数是MAVLink通信的入口点，负责：
+ * 1. 初始化线程池
+ * 2. 启动UDP通信线程
+ * 3. 启动串口通信线程
+ * 4. 等待通信线程结束
+ * 
+ * @return int 0表示成功，负数表示失败
+ */
+int mavlink_main(void)
+{
+    ss_log_i("MAVLink communication scheduler starting...\n");
+    
+    // 初始化线程池
+    if (mavlink_threadpool_init_simple() != 0) {
+        ss_log_e("Failed to initialize thread pool, continuing with synchronous processing\n");
+    }
+    
+    // 初始化状态变量
+    current_camera_mode = 0; // 默认正常模式
+    simulate_autopilot = true;  // 默认启动模拟飞控
+    camera_button_pressed = false;
+    
+    //启动UDP通信线程
+    g_udp_running = true;
+    if (pthread_create(&g_udp_thread, NULL, udp_thread_func, NULL) != 0) {
+        ss_log_e("Failed to create UDP communication thread\n");
+        g_udp_running = false;
+        return -1;
+    }
+    
+    // 启动串口通信线程
+    g_uart_running = true;
+    if (pthread_create(&g_uart_thread, NULL, uart_thread_func, NULL) != 0) {
+        ss_log_e("Failed to create UART communication thread\n");
+        g_uart_running = false;
+        
+        // 停止UDP线程
+        g_udp_running = false;
+        if (g_udp_thread) {
+            pthread_join(g_udp_thread, NULL);
+        }
+        
+        return -1;
+    }
+    
+    ss_log_i("✅ MAVLink communication scheduler started successfully\n");
+    ss_log_i("✅ UDP communication: port 14550\n");
+    ss_log_i("✅ UART communication: /dev/ttyAMA5, 115200 baud\n");
+    
+    // 等待通信线程结束
+    while (g_udp_running || g_uart_running) {
+        sleep(1);
+   //#if 0      
+        // 检查线程状态
+        if (g_udp_running) {
+            int ret = pthread_join(g_udp_thread, NULL);
+            if (ret == 0) {
+                g_udp_running = false;
+                ss_log_i("UDP communication thread finished\n");
+            }
+        }
+        
+        if (g_uart_running) {
+            int ret = pthread_join(g_uart_thread, NULL);
+            if (ret == 0) {
+                g_uart_running = false;
+                ss_log_i("UART communication thread finished\n");
+            }
+        }
+    //#endif
+    }
+    
+    // 清理线程池
+    mavlink_threadpool_cleanup();
+    
+    ss_log_i("MAVLink communication scheduler stopped\n");
+    return 0;
+}
+
+
+

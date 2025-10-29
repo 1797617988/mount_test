@@ -63,7 +63,7 @@ mavlink_threadpool_t* mavlink_threadpool_create(int thread_count) {
     
     mavlink_threadpool_t* pool = (mavlink_threadpool_t*)malloc(sizeof(mavlink_threadpool_t));
     if (!pool) {
-        ss_log_e("Failed to allocate memory for thread pool");
+        ss_log_e("Failed to allocate memory for thread pool\n");
         return NULL;
     }
     
@@ -75,13 +75,13 @@ mavlink_threadpool_t* mavlink_threadpool_create(int thread_count) {
     
     // 初始化互斥锁和条件变量
     if (pthread_mutex_init(&(pool->lock), NULL) != 0) {
-        ss_log_e("Failed to initialize mutex");
+        ss_log_e("Failed to initialize mutex\n");
         free(pool);
         return NULL;
     }
     
     if (pthread_cond_init(&(pool->notify), NULL) != 0) {
-        ss_log_e("Failed to initialize condition variable");
+        ss_log_e("Failed to initialize condition variable\n");
         pthread_mutex_destroy(&(pool->lock));
         free(pool);
         return NULL;
@@ -90,7 +90,7 @@ mavlink_threadpool_t* mavlink_threadpool_create(int thread_count) {
     // 创建线程数组
     pool->threads = (pthread_t*)malloc(sizeof(pthread_t) * thread_count);
     if (!pool->threads) {
-        ss_log_e("Failed to allocate memory for threads");
+        ss_log_e("Failed to allocate memory for threads\n");
         pthread_mutex_destroy(&(pool->lock));
         pthread_cond_destroy(&(pool->notify));
         free(pool);
@@ -100,7 +100,7 @@ mavlink_threadpool_t* mavlink_threadpool_create(int thread_count) {
     // 创建工作线程
     for (int i = 0; i < thread_count; i++) {
         if (pthread_create(&(pool->threads[i]), NULL, mavlink_threadpool_worker, pool) != 0) {
-            ss_log_e("Failed to create thread %d", i);
+            ss_log_e("Failed to create thread %d\n", i);
             pool->shutdown = true;
             pthread_cond_broadcast(&(pool->notify));
             
@@ -117,26 +117,26 @@ mavlink_threadpool_t* mavlink_threadpool_create(int thread_count) {
         }
     }
     
-    ss_log_i("Thread pool created with %d threads", thread_count);
+    ss_log_i("Thread pool created with %d threads\n", thread_count);
     return pool;
 }
 
 /* 添加任务到线程池 */
 int mavlink_threadpool_add(mavlink_threadpool_t* pool, void (*function)(void*), void* arg) {
     if (!pool || !function) {
-        ss_log_e("Invalid parameters for threadpool add");
+        ss_log_e("Invalid parameters for threadpool add\n");
         return -1;
     }
     
     if (pool->shutdown) {
-        ss_log_w("Thread pool is shutting down, cannot add new tasks");
+        ss_log_w("Thread pool is shutting down, cannot add new tasks\n");
         return -1;
     }
     
     // 创建新任务
     mavlink_job_t* job = (mavlink_job_t*)malloc(sizeof(mavlink_job_t));
     if (!job) {
-        ss_log_e("Failed to allocate memory for job");
+        ss_log_e("Failed to allocate memory for job\n");
         return -1;
     }
     
@@ -190,7 +190,7 @@ void mavlink_threadpool_destroy(mavlink_threadpool_t* pool) {
     pthread_cond_destroy(&(pool->notify));
     free(pool);
     
-    ss_log_i("Thread pool destroyed");
+    ss_log_i("Thread pool destroyed\n");
 }
 
 /* 获取线程池队列大小 */

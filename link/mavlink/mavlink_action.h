@@ -12,7 +12,7 @@ extern "C" {
 #include <mavlink_v2/common/mavlink.h>
 #include "ss_log.h"
 #include "mavlink_threadpool.h"
-
+#include "mavlink_init.h"
 /* ========================== 1. 基础定义（与原工程一致） ============================ */
 
 /* 定义函数指针类型 - 与原工程完全一致 */

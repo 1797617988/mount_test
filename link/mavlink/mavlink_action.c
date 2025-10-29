@@ -812,7 +812,7 @@ void mavlink_action_set_camera_focus(void* context, const mavlink_message_t* msg
         
         // 立即发送确认，让QGC按钮快速恢复
         // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 这里可以添加实际的对焦设置逻辑
         // 例如：set_camera_focus(focus_type, focus_value);
