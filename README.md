@@ -1,2 +1,0 @@
-# mount_test
-mount
