@@ -1,0 +1,19 @@
+
+CC=gcc
+APP=mymain
+QSORT=my_qsort
+QSORTLIB=libmy_qsort.a
+LDFLAGS+=-L./ -l$(QSORT)
+
+$(APP):mymain.o $(QSORTLIB)
+	$(CC) -g $< $(LDFLAGS) -o $(APP)
+
+$(QSORTLIB):$(QSORT).o
+	ar crs $(QSORTLIB) $<
+
+# 所有的.c文件生成对应的.o文件
+%.o:%.c
+	$(CC) -c $< -o $@
+
+clean:
+	rm -rf *.o $(APP) *.a

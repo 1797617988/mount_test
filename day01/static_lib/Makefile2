@@ -1,0 +1,21 @@
+VAR_A=A
+VAR_B:=$(VAR_A)B
+VAR_A:=$(VAR_A)A
+
+VAR_C?=HELLO
+VAR_C?=WORLD
+
+VAR_D=TEST1
+VAR_D+=TEST2
+out:
+	@echo $(VAR_A)
+	@echo $(VAR_B)
+	@echo $(VAR_C)
+	@echo $(VAR_D)
+
+test.a:mymain my_qsort.o
+	@echo $@
+	@echo $<
+	@echo $^
+	@echo $*
+
