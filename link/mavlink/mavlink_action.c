@@ -753,7 +753,7 @@ void mavlink_action_reset_camera_settings(void* context, const mavlink_message_t
         
         // 立即发送确认，让QGC按钮快速恢复
         // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 发送更新后的相机设置
         // TODO: 需要实现send_camera_settings函数
@@ -783,7 +783,7 @@ void mavlink_action_set_camera_zoom(void* context, const mavlink_message_t* msg)
         
         // 立即发送确认，让QGC按钮快速恢复
         // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 这里可以添加实际的变焦设置逻辑
         // 例如：set_camera_zoom(zoom_type, zoom_value);
