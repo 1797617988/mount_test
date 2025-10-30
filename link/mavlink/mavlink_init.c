@@ -38,15 +38,18 @@ void mavlink_udp_deinit(void);
 
 
 
+// 通用消息发送函数
+void send_mavlink_message(int fd, const void* dest_addr, socklen_t addr_len, const mavlink_message_t* msg);
+
 // 消息发送函数声明
-void send_autopilot_heartbeat(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-void send_heartbeat(int socket_fd, const struct sockaddr_in* src_addr, socklen_t src_addr_len);
-void send_command_ack(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len, uint16_t command, uint8_t result);
-void send_camera_information(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-void send_camera_capture_status(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-void send_video_stream_status(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-void send_video_stream_information(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-void send_camera_settings(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
+void send_autopilot_heartbeat(int fd, const void* dest_addr, socklen_t addr_len);
+void send_heartbeat(int fd, const void* dest_addr, socklen_t addr_len);
+void send_command_ack(int fd, const void* dest_addr, socklen_t addr_len, uint16_t command, uint8_t result);
+void send_camera_information(int fd, const void* dest_addr, socklen_t addr_len);
+void send_camera_capture_status(int fd, const void* dest_addr, socklen_t addr_len);
+void send_video_stream_status(int fd, const void* dest_addr, socklen_t addr_len);
+void send_video_stream_information(int fd, const void* dest_addr, socklen_t addr_len);
+void send_camera_settings(int fd, const void* dest_addr, socklen_t addr_len);
 
 /* ========================== 1. 全局变量定义 ============================ */
 
@@ -126,13 +129,54 @@ void mavlink_stop(void)
     ss_log_i("MAVLink communication stopped\n");
 }
 
-/* ========================== 4. 消息发送函数实现 ============================ */
+/* ========================== 4. 通用消息发送函数 ============================ */
+
+/**
+ * @brief 通用MAVLink消息发送函数
+ * 
+ * 这个函数支持多种通信协议：
+ * - UDP: 使用sendto()发送到指定地址
+ * - 串口: 使用write()直接写入串口
+ * 
+ * @param fd 文件描述符 (socket fd 或 uart fd)
+ * @param dest_addr 目标地址 (UDP地址或NULL)
+ * @param addr_len 地址长度 (UDP地址长度或0)
+ * @param msg MAVLink消息
+ */
+void send_mavlink_message(int fd, const void* dest_addr, socklen_t addr_len, const mavlink_message_t* msg) {
+    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
+    const int len = mavlink_msg_to_send_buffer(buffer, msg);
+    
+    if (len <= 0) {
+        ss_log_e("Failed to encode MAVLink message\n");
+        return;
+    }
+    
+    int ret;
+    
+    // 判断通信协议类型
+    if (dest_addr != NULL && addr_len > 0) {
+        // UDP通信：使用sendto
+        ret = sendto(fd, buffer, len, 0, (const struct sockaddr*)dest_addr, addr_len);
+    } else {
+        // 串口通信：使用write
+        ret = write(fd, buffer, len);
+    }
+    
+    if (ret != len) {
+        ss_log_e("Failed to send MAVLink message: %s\n", strerror(errno));
+    } else {
+        ss_log_d("Sent MAVLink message (id=%d, len=%d)", msg->msgid, len);
+    }
+}
+
+/* ========================== 5. 消息发送函数实现 ============================ */
 
 /**
  * @brief 发送模拟飞控心跳包
  * 当检测不到真实飞控时，发送模拟飞控心跳让QGC认为有飞控存在
  */
-void send_autopilot_heartbeat(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len)
+void send_autopilot_heartbeat(int fd, const void* dest_addr, socklen_t addr_len)
 {
     mavlink_message_t message;
     
@@ -149,21 +193,15 @@ void send_autopilot_heartbeat(int socket_fd, const struct sockaddr_in* dest_addr
         MAV_STATE_STANDBY               // 系统状态 - 待机
     );
     
-    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    const int len = mavlink_msg_to_send_buffer(buffer, &message);
-    
-    int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
-    if (ret != len) {
-        ss_log_e("Failed to send autopilot heartbeat: %s", strerror(errno));
-    } else {
-        ss_log_d("Sent simulated autopilot heartbeat (sysid=1, compid=1)");
-    }
+    // 使用通用消息发送函数
+    send_mavlink_message(fd, dest_addr, addr_len, &message);
+    ss_log_d("Sent simulated autopilot heartbeat (sysid=1, compid=1)");
 }
 
 /**
  * @brief 发送相机心跳包
  */
-void send_heartbeat(int socket_fd, const struct sockaddr_in* src_addr, socklen_t src_addr_len)
+void send_heartbeat(int fd, const void* dest_addr, socklen_t addr_len)
 {
     mavlink_message_t message;
 
@@ -182,21 +220,15 @@ void send_heartbeat(int socket_fd, const struct sockaddr_in* src_addr, socklen_t
         MAV_STATE_STANDBY              // 系统状态
     );
 
-    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    const int len = mavlink_msg_to_send_buffer(buffer, &message);
-
-    int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)src_addr, src_addr_len);
-    if (ret != len) {
-        ss_log_e("Failed to send heartbeat: %s", strerror(errno));
-    } else {
-        ss_log_d("Sent heartbeat (sysid=%d, compid=%d)", systemid, camera_component_id);
-    }
+    // 使用通用消息发送函数
+    send_mavlink_message(fd, dest_addr, addr_len, &message);
+    ss_log_d("Sent heartbeat (sysid=%d, compid=%d)", systemid, camera_component_id);
 }
 
 /**
  * @brief 发送命令确认
  */
-void send_command_ack(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len, 
+void send_command_ack(int fd, const void* dest_addr, socklen_t addr_len, 
                      uint16_t command, uint8_t result) {
     mavlink_message_t msg;
     mavlink_command_ack_t ack;
@@ -211,22 +243,16 @@ void send_command_ack(int socket_fd, const struct sockaddr_in* dest_addr, sockle
     // MAVLink 2.0的encode函数可以处理协议兼容性
     mavlink_msg_command_ack_encode(systemid, camera_component_id, &msg, &ack);
     
-    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    const int len = mavlink_msg_to_send_buffer(buffer, &msg);
-    
-    int send_result = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
-    if (send_result != len) {
-        ss_log_e("❌ Failed to send command ACK: %s", strerror(errno));
-    } else {
-        ss_log_i("✅ Sent ACK for command %d with result %d", command, result);
-    }
+    // 使用通用消息发送函数
+    send_mavlink_message(fd, dest_addr, addr_len, &msg);
+    ss_log_i("✅ Sent ACK for command %d with result %d", command, result);
 }
 
 /**
  * @brief 发送相机信息消息
  * 这是关键消息，QGC需要这个信息才能识别设备为相机
  */
-void send_camera_information(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len)
+void send_camera_information(int fd, const void* dest_addr, socklen_t addr_len)
 {
     mavlink_message_t message;
     mavlink_camera_information_t cam_info;
@@ -273,22 +299,16 @@ void send_camera_information(int socket_fd, const struct sockaddr_in* dest_addr,
     // 编码相机信息消息 - MAVLink 2.0的encode函数可以处理协议兼容性
     mavlink_msg_camera_information_encode(systemid, camera_component_id, &message, &cam_info);
     
-    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    const int len = mavlink_msg_to_send_buffer(buffer, &message);
-
-    int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
-    if (ret != len) {
-        ss_log_e("Failed to send camera information: %s\n", strerror(errno));
-    } else {
-        ss_log_i("Sent camera information to QGC");
-    }
+    // 使用通用消息发送函数
+    send_mavlink_message(fd, dest_addr, addr_len, &message);
+    ss_log_i("Sent camera information to QGC\n");
 }
 
 /**
  * @brief 发送相机捕获状态消息
  * 这个消息告诉QGC相机的当前状态，包括是否正在录像等
  */
-void send_camera_capture_status(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len)
+void send_camera_capture_status(int fd, const void* dest_addr, socklen_t addr_len)
 {
     mavlink_message_t message;
     mavlink_camera_capture_status_t capture_status;
@@ -307,22 +327,16 @@ void send_camera_capture_status(int socket_fd, const struct sockaddr_in* dest_ad
     // 编码相机捕获状态消息 - MAVLink 2.0的encode函数可以处理协议兼容性
     mavlink_msg_camera_capture_status_encode(systemid, camera_component_id, &message, &capture_status);
     
-    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    const int len = mavlink_msg_to_send_buffer(buffer, &message);
-    
-    int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
-    if (ret != len) {
-        ss_log_e("Failed to send camera capture status: %s", strerror(errno));
-    } else {
-        ss_log_d("Sent camera capture status (video_status: %d)", capture_status.video_status);
-    }
+    // 使用通用消息发送函数
+    send_mavlink_message(fd, dest_addr, addr_len, &message);
+    ss_log_d("Sent camera capture status (video_status: %d)\n", capture_status.video_status);
 }
 
 /**
  * @brief 发送视频流状态消息
  * 告诉QGC当前视频流的状态
  */
-void send_video_stream_status(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len)
+void send_video_stream_status(int fd, const void* dest_addr, socklen_t addr_len)
 {
     mavlink_message_t message;
     mavlink_video_stream_status_t stream_status;
@@ -355,30 +369,25 @@ void send_video_stream_status(int socket_fd, const struct sockaddr_in* dest_addr
     
     mavlink_msg_video_stream_status_encode(systemid, camera_component_id, &message, &stream_status);
     
-    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    const int len = mavlink_msg_to_send_buffer(buffer, &message);
-    
-    int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
-    if (ret != len) {
-        ss_log_e("Failed to send video stream status: %s", strerror(errno));
-    } else {
-        ss_log_d("Sent video stream status: %dx%d @ %.1ffps (bitrate: %dkbps)", 
-                stream_status.resolution_h, stream_status.resolution_v, 
-                stream_status.framerate, stream_status.bitrate);
-    }
+    // 使用通用消息发送函数
+    send_mavlink_message(fd, dest_addr, addr_len, &message);
+    ss_log_d("Sent video stream status: %dx%d @ %.1ffps (bitrate: %dkbps)\n", 
+            stream_status.resolution_h, stream_status.resolution_v, 
+            stream_status.framerate, stream_status.bitrate);
 }
 
 /**
  * @brief 发送视频流信息消息
  * 告诉QGC相机支持哪些分辨率
  */
-void send_video_stream_information(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len)
+void send_video_stream_information(int fd, const void* dest_addr, socklen_t addr_len)
 {
-    // 支持的分辨率配置 - 提供三种相机模式：正常、变焦、红外
+    // 支持的分辨率配置 - 提供四种相机模式：正常、变焦、红外、变焦+红外
     static const resolution_config_t supported_resolutions[] = {
-        {1920, 1080, 30.0f, "1080p Normal"}, // 正常相机模式
-        {1920, 1080, 30.0f, "1080p Zoom"},   // 变焦模式
-        {1920, 1080, 30.0f, "1080p IR"}      // 红外模式
+        {1920, 1080, 30.0f, "1080p Normal"},    // 正常相机模式
+        {1920, 1080, 30.0f, "1080p Zoom"},      // 变焦模式
+        {1920, 1080, 30.0f, "1080p IR"},        // 红外模式
+        {1920, 1080, 30.0f, "1080p Zoom+IR"}    // 变焦+红外模式
     };
     
     const int num_resolutions = sizeof(supported_resolutions) / sizeof(supported_resolutions[0]);
@@ -418,26 +427,22 @@ void send_video_stream_information(int socket_fd, const struct sockaddr_in* dest
         } else if (i == 1) {
             // 变焦模式
             snprintf(uri, sizeof(uri), "rtsp://192.168.144.253:8554/video1");
-        } else {
+        } else if (i == 2) {
             // 红外模式
             snprintf(uri, sizeof(uri), "rtsp://192.168.144.253:8554/video2");
+        } else {
+            // 变焦+红外模式
+            snprintf(uri, sizeof(uri), "rtsp://192.168.144.253:8554/video3");
         }
         strncpy((char*)stream_info.uri, uri, sizeof(stream_info.uri));
         
         // 编码并发送
         mavlink_msg_video_stream_information_encode(systemid, camera_component_id, &message, &stream_info);
         
-        uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-        const int len = mavlink_msg_to_send_buffer(buffer, &message);
-        
-        int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
-        if (ret != len) {
-            ss_log_e("Failed to send video stream information for %s: %s\n", 
-                    supported_resolutions[i].name, strerror(errno));
-        } else {
-            ss_log_i("Sent video stream information: %s (stream_id=%d, URI=%s)\n",
-                    supported_resolutions[i].name, stream_info.stream_id, uri);
-        }
+        // 使用通用消息发送函数
+        send_mavlink_message(fd, dest_addr, addr_len, &message);
+        ss_log_i("Sent video stream information: %s (stream_id=%d, URI=%s)\n",
+                supported_resolutions[i].name, stream_info.stream_id, uri);
         
         // 短暂延迟，避免消息发送过快
         usleep(10000); // 10ms
@@ -450,7 +455,7 @@ void send_video_stream_information(int socket_fd, const struct sockaddr_in* dest
  * @brief 发送相机设置信息
  * 告诉QGC相机支持哪些设置选项（红外、变焦等）
  */
-void send_camera_settings(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len)
+void send_camera_settings(int fd, const void* dest_addr, socklen_t addr_len)
 {
     mavlink_message_t message;
     mavlink_camera_settings_t camera_settings;
@@ -477,15 +482,9 @@ void send_camera_settings(int socket_fd, const struct sockaddr_in* dest_addr, so
     // 发送当前相机模式设置
     mavlink_msg_camera_settings_encode(systemid, camera_component_id, &message, &camera_settings);
     
-    uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
-    int len = mavlink_msg_to_send_buffer(buffer, &message);
-    
-    int ret = sendto(socket_fd, buffer, len, 0, (const struct sockaddr*)dest_addr, dest_len);
-    if (ret != len) {
-        ss_log_e("Failed to send camera mode settings: %s", strerror(errno));
-    } else {
-        ss_log_i("Sent camera mode settings (current mode: %d, mode_id: %d)", current_camera_mode, camera_settings.mode_id);
-    }
+    // 使用通用消息发送函数
+    send_mavlink_message(fd, dest_addr, addr_len, &message);
+    ss_log_i("Sent camera mode settings (current mode: %d, mode_id: %d)", current_camera_mode, camera_settings.mode_id);
 }
 
 

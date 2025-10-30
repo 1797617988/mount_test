@@ -58,6 +58,9 @@ void mavlink_action_reset_camera_settings(void* context, const mavlink_message_t
 void mavlink_action_set_camera_zoom(void* context, const mavlink_message_t* msg);
 void mavlink_action_set_camera_focus(void* context, const mavlink_message_t* msg);
 
+// 视频流切换函数声明
+void switch_video_stream(int stream_mode);
+
 // 注意：相机状态消息（CAMERA_INFORMATION, CAMERA_SETTINGS等）是相机发送给QGC的
 // 不是QGC发送给相机的，所以不应该在这里声明处理函数
 
@@ -87,9 +90,11 @@ MAVLINK_ACTION_S g_mavlink_action_tab[] = {
     {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_REQUEST_CAMERA_CAPTURE_STATUS, mavlink_action_request_camera_capture_status, 1, "请求相机捕获状态"},
     
     // 相机控制命令
-    {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_SET_CAMERA_MODE, mavlink_action_set_camera_mode, 4, "设置相机模式"},
+    // 相机控制命令
+    {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_IMAGE_START_CAPTURE, mavlink_action_image_start_capture, 4, "开始拍照"},
+    {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_VIDEO_START_CAPTURE, mavlink_action_video_start_capture, 4, "开始录像"},
+    {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_VIDEO_STOP_CAPTURE, mavlink_action_video_stop_capture, 4, "停止录像"},
     {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_RESET_CAMERA_SETTINGS, mavlink_action_reset_camera_settings, 4, "重置相机设置"},
-    {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_SET_CAMERA_ZOOM, mavlink_action_set_camera_zoom, 4, "设置相机变焦"},
     {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_SET_CAMERA_FOCUS, mavlink_action_set_camera_focus, 4, "设置相机对焦"},
     
     // 跟踪命令
@@ -99,6 +104,19 @@ MAVLINK_ACTION_S g_mavlink_action_tab[] = {
     
     // 其他命令
     {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_SET_MESSAGE_INTERVAL, mavlink_action_set_message_interval, 2, "设置消息间隔"},
+    
+    // QGC界面标准命令
+    // 云台控制命令
+    {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_DO_MOUNT_CONTROL, mavlink_action_gimbal_control, 5, "云台控制"},
+    
+    // 变焦控制命令
+    {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_SET_CAMERA_ZOOM, mavlink_action_zoom_control, 5, "相机变焦"},
+    
+    // 视频源选择命令
+    {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_SET_CAMERA_SOURCE, mavlink_action_camera_source, 5, "相机源选择"},
+    
+    // 相机模式命令
+    {MAVLINK_MSG_ID_COMMAND_LONG, MAV_CMD_SET_CAMERA_MODE, mavlink_action_camera_mode, 5, "相机模式"},
     
     // 注意：相机状态消息（CAMERA_INFORMATION, CAMERA_SETTINGS等）是相机发送给QGC的
     // 不是QGC发送给相机的，所以不应该在这里处理
@@ -165,7 +183,7 @@ static void async_command_handler(void* arg) {
 /* ========================== 6. 命令分发函数 ============================ */
 
 /* 查找命令处理函数 - 统一使用映射表机制 */
-static mavlink_action_func find_command_handler(uint32_t msg_id, uint16_t command_id) {
+mavlink_action_func find_command_handler(uint32_t msg_id, uint16_t command_id) {
     for (uint32_t i = 0; i < g_mavlink_action_count; i++) {
         if (g_mavlink_action_tab[i].msg_id == msg_id) {
             // 对于COMMAND_LONG消息，需要匹配具体的命令ID
@@ -403,8 +421,7 @@ void mavlink_action_image_start_capture(void* context, const mavlink_message_t* 
         ss_log_i("📸 Photo button pressed, setting camera_button_pressed=true, stopping autopilot simulation");
         
         // 立即发送确认，让QGC按钮快速恢复
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 异步执行拍照操作
         int photo_result = take_photo();
@@ -430,8 +447,7 @@ void mavlink_action_video_start_capture(void* context, const mavlink_message_t* 
         int video_start_result = start_video_recording();
         uint8_t ack_result = (video_start_result == 0) ? MAV_RESULT_ACCEPTED : MAV_RESULT_FAILED;
         
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, ack_result);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, ack_result);
         ss_log_i("🎥 Video start completed, result: %d", video_start_result);
     }
 }
@@ -454,8 +470,7 @@ void mavlink_action_video_stop_capture(void* context, const mavlink_message_t* m
         int video_stop_result = stop_video_recording();
         uint8_t ack_result = (video_stop_result == 0) ? MAV_RESULT_ACCEPTED : MAV_RESULT_FAILED;
         
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, ack_result);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, ack_result);
         ss_log_i("⏹️ Video stop completed, result: %d", video_stop_result);
     }
 }
@@ -471,11 +486,9 @@ void mavlink_action_request_video_stream_info(void* context, const mavlink_messa
         ss_log_i("🎥 Video stream information requested");
         
         // 调用发送视频流信息的函数
-        // TODO: 需要实现send_video_stream_information函数
-        // send_video_stream_information(socket_fd, dest_addr, dest_len);
+        send_video_stream_information(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len);
         
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
     }
 }
 
@@ -490,11 +503,9 @@ void mavlink_action_request_video_stream_status(void* context, const mavlink_mes
         ss_log_i("🎥 Video stream status requested");
         
         // 调用发送视频流状态的函数
-        // TODO: 需要实现send_video_stream_status函数
-        // send_video_stream_status(socket_fd, dest_addr, dest_len);
+        send_video_stream_status(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len);
         
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
     }
 }
 
@@ -509,11 +520,9 @@ void mavlink_action_request_camera_settings(void* context, const mavlink_message
         ss_log_i("⚙️ Camera settings requested");
         
         // 调用发送相机设置的函数
-        // TODO: 需要实现send_camera_settings函数
-        // send_camera_settings(socket_fd, dest_addr, dest_len);
+        send_camera_settings(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len);
         
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
     }
 }
 
@@ -528,11 +537,9 @@ void mavlink_action_request_camera_capture_status(void* context, const mavlink_m
         ss_log_i("📷 Camera capture status requested");
         
         // 调用发送相机捕获状态的函数
-        // TODO: 需要实现send_camera_capture_status函数
-        // send_camera_capture_status(socket_fd, dest_addr, dest_len);
+        send_camera_capture_status(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len);
         
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
     }
 }
 
@@ -561,8 +568,7 @@ void mavlink_action_set_camera_mode(void* context, const mavlink_message_t* msg)
         // 验证模式值
         if (camera_mode != CAMERA_MODE_IMAGE && camera_mode != CAMERA_MODE_VIDEO) {
             ss_log_e("Invalid camera mode: %d (expected 0=IMAGE or 1=VIDEO)", camera_mode);
-            // TODO: 需要实现send_command_ack函数
-            // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_FAILED);
+            send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_FAILED);
             return;
         }
         
@@ -573,12 +579,10 @@ void mavlink_action_set_camera_mode(void* context, const mavlink_message_t* msg)
         const char* mode_names[] = {"拍照模式", "视频模式"};
         ss_log_i("✅ Camera mode set to %s (mode=%d)", mode_names[camera_mode], camera_mode);
         
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 发送更新后的设置
-        // TODO: 需要实现send_camera_settings函数
-        // send_camera_settings(socket_fd, dest_addr, dest_len);
+        send_camera_settings(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len);
     }
 }
 
@@ -615,7 +619,7 @@ void mavlink_action_camera_track_point(void* context, const mavlink_message_t* m
         float radius = cmd.param3;
         ss_log_i("🎯 Tracking point: (%.2f, %.2f), radius: %.2f", point_x, point_y, radius);
         
-        // TODO: 需要实现send_command_ack函数);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
     }
 }
 
@@ -629,7 +633,7 @@ void mavlink_action_camera_stop_tracking(void* context, const mavlink_message_t*
     if (cmd.command == MAV_CMD_CAMERA_STOP_TRACKING) {
         ss_log_i("⏹️ Stopping camera tracking");
         
-        // TODO: 需要实现send_command_ack函数);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
     }
 }
 
@@ -652,8 +656,7 @@ void mavlink_action_camera_track_rectangle(void* context, const mavlink_message_
                  top_left_x, top_left_y, bottom_right_x, bottom_right_y);
         
         // 立即发送确认，让QGC按钮快速恢复
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 这里可以添加实际的矩形跟踪逻辑
         // 例如：start_rectangle_tracking(top_left_x, top_left_y, bottom_right_x, bottom_right_y);
@@ -679,8 +682,7 @@ void mavlink_action_video_start_streaming(void* context, const mavlink_message_t
         ss_log_i("📹 Stream ID: %d", stream_id);
         
         // 立即发送确认，让QGC按钮快速恢复
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 这里可以添加实际的视频流启动逻辑
         // 例如：start_video_stream(stream_id);
@@ -706,8 +708,7 @@ void mavlink_action_video_stop_streaming(void* context, const mavlink_message_t*
         ss_log_i("⏹️ Stream ID: %d", stream_id);
         
         // 立即发送确认，让QGC按钮快速恢复
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 这里可以添加实际的视频流停止逻辑
         // 例如：stop_video_stream(stream_id);
@@ -725,11 +726,10 @@ void mavlink_action_request_camera_information(void* context, const mavlink_mess
         ss_log_i("📷 Requesting camera information");
         
         // 立即发送确认，让QGC按钮快速恢复
-        // TODO: 需要实现send_command_ack函数
-        // send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 这里可以添加实际的相机信息发送逻辑
-        // 例如：send_camera_information(ctx->socket_fd, ctx->dest_addr, ctx->dest_len);
+        send_camera_information(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len);
     }
 }
 
@@ -753,7 +753,7 @@ void mavlink_action_reset_camera_settings(void* context, const mavlink_message_t
         
         // 立即发送确认，让QGC按钮快速恢复
         // TODO: 需要实现send_command_ack函数
-        send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 发送更新后的相机设置
         // TODO: 需要实现send_camera_settings函数
@@ -761,34 +761,35 @@ void mavlink_action_reset_camera_settings(void* context, const mavlink_message_t
     }
 }
 
-/* 设置相机变焦处理 */
-void mavlink_action_set_camera_zoom(void* context, const mavlink_message_t* msg) {
-    mavlink_unified_context_t* ctx = (mavlink_unified_context_t*)context;
+// /* 设置相机变焦处理 */
+// void mavlink_action_set_camera_zoom(void* context, const mavlink_message_t* msg) {
+//     mavlink_unified_context_t* ctx = (mavlink_unified_context_t*)context;
     
-    mavlink_command_long_t cmd;
-    mavlink_msg_command_long_decode(msg, &cmd);
+//     mavlink_command_long_t cmd;
+//     mavlink_msg_command_long_decode(msg, &cmd);
     
-    if (cmd.command == MAV_CMD_SET_CAMERA_ZOOM) {
-        ss_log_i("🔍 Setting camera zoom");
+//     if (cmd.command == MAV_CMD_SET_CAMERA_ZOOM) {
+//         ss_log_i("🔍 Setting camera zoom");
         
-        // 设置相机按键状态并停止模拟飞控
-        camera_button_pressed = true;
-        simulate_autopilot = false;
-        ss_log_i("🔍 Camera zoom button pressed, setting camera_button_pressed=true, stopping autopilot simulation");
+//         // 设置相机按键状态并停止模拟飞控
+//         camera_button_pressed = true;
+//         simulate_autopilot = false;
+//         ss_log_i("🔍 Camera zoom button pressed, setting camera_button_pressed=true, stopping autopilot simulation");
         
-        uint8_t zoom_type = (uint8_t)cmd.param1;
-        float zoom_value = cmd.param2;
+//         uint8_t zoom_type = (uint8_t)cmd.param1;
+//         float zoom_value = cmd.param2;
         
-        ss_log_i("🔍 Zoom type: %d, value: %.2f", zoom_type, zoom_value);
+//         ss_log_i("🔍 Zoom type: %d, value: %.2f", zoom_type, zoom_value);
         
-        // 立即发送确认，让QGC按钮快速恢复
-        // TODO: 需要实现send_command_ack函数
-        send_command_ack(socket_fd, dest_addr, dest_len, cmd.command, MAV_RESULT_ACCEPTED);
+//         // 立即发送确认，让QGC按钮快速恢复
+//         // TODO: 需要实现send_command_ack函数
+//         send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
         
-        // 这里可以添加实际的变焦设置逻辑
-        // 例如：set_camera_zoom(zoom_type, zoom_value);
-    }
-}
+//         // 这里可以添加实际的变焦设置逻辑
+//         // 例如：set_camera_zoom(zoom_type, zoom_value);
+//     }
+// }
+
 
 /* 设置相机对焦处理 */
 void mavlink_action_set_camera_focus(void* context, const mavlink_message_t* msg) {
@@ -811,11 +812,213 @@ void mavlink_action_set_camera_focus(void* context, const mavlink_message_t* msg
         ss_log_i("🎯 Focus type: %d, value: %.2f", focus_type, focus_value);
         
         // 立即发送确认，让QGC按钮快速恢复
-        // TODO: 需要实现send_command_ack函数
+        // 使用通用消息发送接口
         send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
         
         // 这里可以添加实际的对焦设置逻辑
         // 例如：set_camera_focus(focus_type, focus_value);
+    }
+}
+
+/* ========================== 9. 标准MAVLink命令处理函数 ============================ */
+
+/* 云台控制处理 - MAV_CMD_DO_MOUNT_CONTROL (205) */
+void mavlink_action_gimbal_control(void* context, const mavlink_message_t* msg) {
+    mavlink_unified_context_t* ctx = (mavlink_unified_context_t*)context;
+    
+    mavlink_command_long_t cmd;
+    mavlink_msg_command_long_decode(msg, &cmd);
+    
+    if (cmd.command == MAV_CMD_DO_MOUNT_CONTROL) {
+        float pitch = cmd.param1;  // 俯仰角度
+        float roll = cmd.param2;   // 横滚角度
+        float yaw = cmd.param3;    // 偏航角度
+        
+        // 根据参数判断云台控制方向
+        if (pitch > 0) {
+            ss_log_i("⬆️ 云台上 - 俯仰角度: %.2f度", pitch);
+        } else if (pitch < 0) {
+            ss_log_i("⬇️ 云台下 - 俯仰角度: %.2f度", pitch);
+        }
+        
+        if (roll > 0) {
+            ss_log_i("➡️ 云台右 - 横滚角度: %.2f度", roll);
+        } else if (roll < 0) {
+            ss_log_i("⬅️ 云台左 - 横滚角度: %.2f度", roll);
+        }
+        
+        if (yaw > 0) {
+            ss_log_i("↗️ 云台偏右 - 偏航角度: %.2f度", yaw);
+        } else if (yaw < 0) {
+            ss_log_i("↖️ 云台偏左 - 偏航角度: %.2f度", yaw);
+        }
+        
+        // 检查是否为回中操作（所有角度接近0）
+        if (fabs(pitch) < 0.1 && fabs(roll) < 0.1 && fabs(yaw) < 0.1) {
+            ss_log_i("⏺️ 云台回中");
+        }
+        
+        // 发送命令确认
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
+    }
+}
+
+/* 变焦控制处理 - MAV_CMD_SET_CAMERA_ZOOM (531) */
+void mavlink_action_zoom_control(void* context, const mavlink_message_t* msg) {
+    mavlink_unified_context_t* ctx = (mavlink_unified_context_t*)context;
+    
+    mavlink_command_long_t cmd;
+    mavlink_msg_command_long_decode(msg, &cmd);
+    
+    if (cmd.command == MAV_CMD_SET_CAMERA_ZOOM) {
+        uint8_t zoom_type = (uint8_t)cmd.param1;  // 变焦类型
+        float zoom_value = cmd.param2;            // 变焦值
+        
+        ss_log_i("🔍 变焦控制 - 类型: %d, 值: %.2f", zoom_type, zoom_value);
+        
+        // 根据变焦值判断是放大还是缩小
+        if (zoom_value > 0) {
+            ss_log_i("🔍 变焦+ - 放大变焦");
+        } else if (zoom_value < 0) {
+            ss_log_i("🔍 变焦- - 缩小变焦");
+        }
+        
+        // 发送命令确认
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
+    }
+}
+
+/* 相机源选择处理 - MAV_CMD_SET_CAMERA_SOURCE (534) */
+void mavlink_action_camera_source(void* context, const mavlink_message_t* msg) {
+    mavlink_unified_context_t* ctx = (mavlink_unified_context_t*)context;
+    
+    mavlink_command_long_t cmd;
+    mavlink_msg_command_long_decode(msg, &cmd);
+    
+    if (cmd.command == MAV_CMD_SET_CAMERA_SOURCE) {
+        uint8_t primary_source = (uint8_t)cmd.param2;   // 主视频源
+        uint8_t secondary_source = (uint8_t)cmd.param3; // 次视频源
+        
+        ss_log_i("🎬 视频源选择 - 主源: %d, 次源: %d", primary_source, secondary_source);
+        
+        // 根据视频源选择显示不同的模式并执行实际的流切换
+        switch (primary_source) {
+            case 1:
+                ss_log_i("🎬 视频模式1 - 正常模式");
+                // 切换到正常模式流: rtsp://192.168.144.253:8554/video0
+                switch_video_stream(1);
+                break;
+            case 2:
+                ss_log_i("🎬 视频模式2 - 变焦模式");
+                // 切换到变焦模式流: rtsp://192.168.144.253:8554/video1
+                switch_video_stream(2);
+                break;
+            case 3:
+                ss_log_i("🎬 视频模式3 - 红外模式");
+                // 切换到红外模式流: rtsp://192.168.144.253:8554/video2
+                switch_video_stream(3);
+                break;
+            case 4:
+                ss_log_i("🎬 视频模式4 - 变焦+红外模式");
+                // 切换到变焦+红外模式流: rtsp://192.168.144.253:8554/video3
+                switch_video_stream(4);
+                break;
+            default:
+                ss_log_i("🎬 未知视频模式: %d", primary_source);
+                break;
+        }
+        
+        // 发送命令确认
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
+    }
+}
+
+/* 相机模式处理 - MAV_CMD_SET_CAMERA_MODE (530) */
+void mavlink_action_camera_mode(void* context, const mavlink_message_t* msg) {
+    mavlink_unified_context_t* ctx = (mavlink_unified_context_t*)context;
+    
+    mavlink_command_long_t cmd;
+    mavlink_msg_command_long_decode(msg, &cmd);
+    
+    if (cmd.command == MAV_CMD_SET_CAMERA_MODE) {
+        uint8_t camera_mode = (uint8_t)cmd.param2;  // 相机模式
+        
+        ss_log_i("📷 相机模式设置 - 模式: %d", camera_mode);
+        
+        // 根据相机模式显示不同的状态
+        switch (camera_mode) {
+            case 0:
+                ss_log_i("📷 相机模式-拍照");
+                break;
+            case 1:
+                ss_log_i("🎥 相机模式-视频");
+                break;
+            default:
+                ss_log_i("❓ 未知相机模式: %d", camera_mode);
+                break;
+        }
+        
+        // 发送命令确认
+        send_command_ack(ctx->transport.network.socket_fd, ctx->transport.network.addr, ctx->transport.network.addr_len, cmd.command, MAV_RESULT_ACCEPTED);
+    }
+}
+
+/* ========================== 10. 视频流切换功能实现 ============================ */
+
+/**
+ * @brief 切换视频流模式
+ * 
+ * 根据stream_mode参数切换到对应的视频流：
+ * 1 - 正常模式 (rtsp://192.168.144.253:8554/video0)
+ * 2 - 变焦模式 (rtsp://192.168.144.253:8554/video1) 
+ * 3 - 红外模式 (rtsp://192.168.144.253:8554/video2)
+ * 4 - 变焦+红外模式 (rtsp://192.168.144.253:8554/video3)
+ * 
+ * @param stream_mode 视频流模式 (1-4)
+ */
+void switch_video_stream(int stream_mode) {
+    char command[512];
+    const char* stream_names[] = {"未知", "正常模式", "变焦模式", "红外模式", "变焦+红外模式"};
+    const char* stream_uris[] = {
+        "", 
+        "rtsp://192.168.144.253:8554/video0", 
+        "rtsp://192.168.144.253:8554/video1", 
+        "rtsp://192.168.144.253:8554/video2",
+        "rtsp://192.168.144.253:8554/video3"
+    };
+    
+    // 验证模式参数
+    if (stream_mode < 1 || stream_mode > 4) {
+        ss_log_e("❌ 无效的视频流模式: %d (有效范围: 1-4)", stream_mode);
+        return;
+    }
+    
+    ss_log_i("🎬 开始切换到视频流模式: %d (%s)", stream_mode, stream_names[stream_mode]);
+    
+    // 这里应该实现实际的视频流切换逻辑
+    // 例如：停止当前流，启动新流，更新播放器配置等
+    
+    // 模拟实际的流切换命令（需要根据你的实际播放器/流媒体客户端调整）
+    snprintf(command, sizeof(command), 
+             "echo '切换到视频流模式 %d: %s (URI: %s)' && \
+             # 这里添加实际的流切换命令，例如：\
+             # pkill -f 'ffplay.*rtsp' && \
+             # ffplay -i %s &", 
+             stream_mode, stream_names[stream_mode], stream_uris[stream_mode], stream_uris[stream_mode]);
+    
+    printf("=== 执行视频流切换命令 ===\n");
+    printf("=== 模式: %d (%s) ===\n", stream_mode, stream_names[stream_mode]);
+    printf("=== RTSP URI: %s ===\n", stream_uris[stream_mode]);
+    printf("=== 命令: %s ===\n", command);
+    
+    // 执行流切换命令
+    int ret = system(command);
+    if (ret == 0) {
+        ss_log_i("✅ 视频流切换成功: 模式 %d (%s)", stream_mode, stream_names[stream_mode]);
+        printf("=== 视频流切换成功 ===\n");
+    } else {
+        ss_log_e("❌ 视频流切换失败: 模式 %d (%s)", stream_mode, stream_names[stream_mode]);
+        printf("=== 视频流切换失败 ===\n");
     }
 }
 
@@ -824,3 +1027,5 @@ void mavlink_action_set_camera_focus(void* context, const mavlink_message_t* msg
 // 注意：相机状态消息（CAMERA_INFORMATION, CAMERA_SETTINGS等）是相机发送给QGC的
 // 不是QGC发送给相机的，所以不应该在这里实现处理函数
 // 这些消息应该由相机主动发送给QGC，而不是被处理
+
+

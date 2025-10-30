@@ -89,16 +89,52 @@ static void* udp_receive_thread(void* arg) {
                         g_udp_use_mavlink_v1 = false;
                     }
                     
-                    // 直接处理命令，不使用统一架构
-                    // 这里可以添加具体的命令处理逻辑
+                    // 使用统一命令处理架构
                     if (message.msgid == MAVLINK_MSG_ID_COMMAND_LONG) {
                         // 处理命令长消息
                         mavlink_command_long_t cmd;
                         mavlink_msg_command_long_decode(&message, &cmd);
                         ss_log_i("Received COMMAND_LONG: command=%d\n", cmd.command);
                         
-                        // 这里可以调用具体的命令处理函数
-                        // 例如：handle_command_long(&message);
+                        // 查找并调用对应的命令处理函数
+                        mavlink_action_func handler = find_command_handler(message.msgid, cmd.command);
+                        if (handler != NULL) {
+                            ss_log_i("Calling command handler for command %d via UDP\n", cmd.command);
+                            
+                            // 创建上下文并调用处理函数
+                            mavlink_unified_context_t ctx = {
+                                .transport = {
+                                    .network = {
+                                        .socket_fd = g_udp_socket_fd,
+                                        .addr = &g_udp_src_addr,
+                                        .addr_len = g_udp_src_addr_len
+                                    }
+                                }
+                            };
+                            
+                            handler(&ctx, &message);
+                        } else {
+                            ss_log_w("No handler found for command %d via UDP\n", cmd.command);
+                        }
+                    } else {
+                        // 处理其他类型的消息（如心跳消息等）
+                        mavlink_action_func handler = find_command_handler(message.msgid, 0);
+                        if (handler != NULL) {
+                            ss_log_i("Calling handler for message ID %d via UDP\n", message.msgid);
+                            
+                            // 创建上下文并调用处理函数
+                            mavlink_unified_context_t ctx = {
+                                .transport = {
+                                    .network = {
+                                        .socket_fd = g_udp_socket_fd,
+                                        .addr = &g_udp_src_addr,
+                                        .addr_len = g_udp_src_addr_len
+                                    }
+                                }
+                            };
+                            
+                            handler(&ctx, &message);
+                        }
                     }
                 }
             }
@@ -279,7 +315,7 @@ int mavlink_udp_init(void) {
     addr.sin_port = htons(14550); // default port on the ground
 
     if (bind(g_udp_socket_fd, (struct sockaddr*)(&addr), sizeof(addr)) != 0) {
-        ss_log_e("UDP bind error: %s", strerror(errno));
+        ss_log_e("UDP bind error: %s\n", strerror(errno));
         close(g_udp_socket_fd);
         g_udp_socket_fd = -1;
         return -2;
@@ -290,13 +326,13 @@ int mavlink_udp_init(void) {
     tv.tv_sec = 10;
     tv.tv_usec = 100000;
     if (setsockopt(g_udp_socket_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-        ss_log_e("UDP setsockopt error: %s", strerror(errno));
+        ss_log_e("UDP setsockopt error: %s\n", strerror(errno));
         close(g_udp_socket_fd);
         g_udp_socket_fd = -1;
         return -3;
     }
     
-    ss_log_i("UDP communication initialized successfully, bound to port 14550");
+    ss_log_i("UDP communication initialized successfully, bound to port 14550\n");
     return 0;
 }
 
@@ -305,6 +341,6 @@ void mavlink_udp_deinit(void) {
     if (g_udp_socket_fd >= 0) {
         close(g_udp_socket_fd);
         g_udp_socket_fd = -1;
-        ss_log_i("UDP communication deinitialized");
+        ss_log_i("UDP communication deinitialized\n");
     }
 }

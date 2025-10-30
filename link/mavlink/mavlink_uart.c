@@ -10,6 +10,7 @@
 #include <time.h>
 #include "mavlink_uart.h"
 #include "ss_log.h"
+#include "mavlink_action.h"
 /* ========================== 1. 全局变量定义 ============================ */
 
 // 串口通信相关变量
@@ -34,14 +35,14 @@ extern bool simulate_autopilot;           // 模拟飞控控制变量
 extern bool camera_button_pressed;        // 相机按键状态变量
 
 // 消息发送函数声明
-void send_autopilot_heartbeat(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-extern void send_heartbeat(int socket_fd, const struct sockaddr_in* src_addr, socklen_t src_addr_len);
+void send_autopilot_heartbeat(int fd, const void* dest_addr, socklen_t addr_len);
+extern void send_heartbeat(int fd, const void* dest_addr, socklen_t addr_len);
 
-void send_camera_information(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-void send_camera_capture_status(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-void send_video_stream_status(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-void send_video_stream_information(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
-void send_camera_settings(int socket_fd, const struct sockaddr_in* dest_addr, socklen_t dest_len);
+void send_camera_information(int fd, const void* dest_addr, socklen_t addr_len);
+void send_camera_capture_status(int fd, const void* dest_addr, socklen_t addr_len);
+void send_video_stream_status(int fd, const void* dest_addr, socklen_t addr_len);
+void send_video_stream_information(int fd, const void* dest_addr, socklen_t addr_len);
+void send_camera_settings(int fd, const void* dest_addr, socklen_t addr_len);
 
 /* ========================== 2. 串口初始化函数 ============================ */
 
@@ -109,15 +110,15 @@ void mavlink_uart_deinit(void) {
     if (g_uart_fd >= 0) {
         close(g_uart_fd);
         g_uart_fd = -1;
-        ss_log_i("UART communication deinitialized");
+        ss_log_i("UART communication deinitialized\n");
     }
 }
-
+//
 /* ========================== 3. 串口数据接收函数 ============================ */
 
 /* 串口数据接收线程函数 */
 static void* uart_receive_thread(void* arg) {
-    ss_log_i("UART receive thread started");
+    ss_log_i("UART receive thread started\n");
     
     uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
     mavlink_status_t status;
@@ -126,7 +127,6 @@ static void* uart_receive_thread(void* arg) {
     while (g_uart_thread_running) {
         // 读取串口数据
         ssize_t n = read(g_uart_fd, buffer, sizeof(buffer));
-        // HexPrintf(buffer, n);
         
         if (n > 0) {
             // 更新QGC连接状态
@@ -135,12 +135,12 @@ static void* uart_receive_thread(void* arg) {
             g_uart_qgc_connected = true;
             g_uart_last_qgc_message = time(NULL);
             
-            ss_log_i("Received UART data, Length:%ld", n);
+            ss_log_i("Received UART data, Length:%ld\n", n);
             
             // 解析MAVLink消息
             for (ssize_t i = 0; i < n; i++) {
                 if (mavlink_parse_char(MAVLINK_COMM_0, buffer[i], &msg, &status)) {
-                    ss_log_i("Received MAVLink message via UART, ID: %d", msg.msgid);
+                    ss_log_i("Received MAVLink message via UART, ID: %d\n", msg.msgid);
                     
                     // 检测QGC连接 - 当收到来自QGC的消息时设置连接状态
                     if (!g_uart_qgc_connected) {
@@ -157,7 +157,7 @@ static void* uart_receive_thread(void* arg) {
                     if (msg.msgid == MAVLINK_MSG_ID_HEARTBEAT && msg.sysid == 1 && msg.compid == 1) {
                         g_uart_real_autopilot_detected = true;
                         g_uart_last_real_autopilot_hb = time(NULL);
-                        ss_log_d("Real autopilot heartbeat detected via UART");
+                        ss_log_d("Real autopilot heartbeat detected via UART\n");
                     }
                     
                     // 检测协议版本
@@ -167,21 +167,43 @@ static void* uart_receive_thread(void* arg) {
                         g_uart_use_mavlink_v1 = false;
                     }
                     
-                    // 直接处理命令
+                    // 创建统一的上下文结构
+                    mavlink_unified_context_t ctx;
+                    ctx.protocol = MAVLINK_PROTOCOL_UART;
+                    ctx.transport.uart.uart_fd = g_uart_fd;
+                    ctx.transport.uart.device_path = "/dev/ttyAMA5";
+                    ctx.transport.uart.baud_rate = 115200;
+                    ctx.system_id = 1;
+                    ctx.component_id = MAV_COMP_ID_CAMERA;
+                    
+                    // 处理所有类型的消息
                     if (msg.msgid == MAVLINK_MSG_ID_COMMAND_LONG) {
                         // 处理命令长消息
                         mavlink_command_long_t cmd;
                         mavlink_msg_command_long_decode(&msg, &cmd);
-                        ss_log_i("Received COMMAND_LONG via UART: command=%d", cmd.command);
+                        ss_log_i("Received COMMAND_LONG via UART: command=%d\n", cmd.command);
                         
-                        // 这里可以调用具体的命令处理函数
-                        // 例如：handle_command_long(&msg);
+                        // 查找并调用对应的命令处理函数
+                        mavlink_action_func handler = find_command_handler(msg.msgid, cmd.command);
+                        if (handler != NULL) {
+                            ss_log_i("Calling command handler for command %d via UART\n", cmd.command);
+                            handler(&ctx, &msg);
+                        } else {
+                            ss_log_w("No handler found for command %d via UART\n", cmd.command);
+                        }
+                    } else {
+                        // 处理其他类型的消息（如心跳消息等）
+                        mavlink_action_func handler = find_command_handler(msg.msgid, 0);
+                        if (handler != NULL) {
+                            ss_log_i("Calling handler for message ID %d via UART\n", msg.msgid);
+                            handler(&ctx, &msg);
+                        }
                     }
                 }
             }
         } else if (n < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                ss_log_e("UART read error: %s", strerror(errno));
+                ss_log_e("UART read error: %s\n", strerror(errno));
                 break;
             }
         }
@@ -191,26 +213,26 @@ static void* uart_receive_thread(void* arg) {
 
     }
     
-    ss_log_i("UART receive thread stopped");
+    ss_log_i("UART receive thread stopped\n");
     return NULL;
 }
 
 /* 启动串口接收线程 */
 static int start_uart_receive_thread(void) {
     if (g_uart_thread_running) {
-        ss_log_w("UART receive thread already running");
+        ss_log_w("UART receive thread already running\n");
         return 0;
     }
     
     g_uart_thread_running = true;
     
     if (pthread_create(&g_uart_receive_thread, NULL, uart_receive_thread, NULL) != 0) {
-        ss_log_e("Failed to create UART receive thread");
+        ss_log_e("Failed to create UART receive thread\n");
         g_uart_thread_running = false;
         return -1;
     }
     
-    ss_log_i("UART receive thread started successfully");
+    ss_log_i("UART receive thread started successfully\n");
     return 0;
 }
 
@@ -227,7 +249,7 @@ static int stop_uart_receive_thread(void) {
         g_uart_receive_thread = 0;
     }
     
-    ss_log_i("UART receive thread stopped");
+    ss_log_i("UART receive thread stopped\n");
     return 0;
 }
 
@@ -235,11 +257,11 @@ static int stop_uart_receive_thread(void) {
 
 /* 串口主循环函数 */
 int mavlink_uart_main(void) {
-    ss_log_i("Entering UART main loop, waiting for MAVLink messages...");
+    ss_log_i("Entering UART main loop, waiting for MAVLink messages...\n");
     
     // 启动接收线程
     if (start_uart_receive_thread() != 0) {
-        ss_log_e("Failed to start UART receive thread");
+        ss_log_e("Failed to start UART receive thread\n");
         return -1;
     }
   
@@ -250,7 +272,6 @@ int mavlink_uart_main(void) {
     time_t last_broadcast = 0;
     
     while (g_uart_thread_running) {
-        #if 0
         time_t current_time = time(NULL);
         
         // 定期发送状态信息
@@ -274,26 +295,26 @@ int mavlink_uart_main(void) {
                 if (g_uart_qgc_connected && (current_time - g_uart_last_qgc_message) >= 10) {
                     g_uart_qgc_connected = false;
                     camera_button_pressed = false;  // QGC断开，重置按键状态
-                    ss_log_i("QGC disconnected via UART, resetting camera button state");
+                    ss_log_i("QGC disconnected via UART, resetting camera button state\n");
                 }
                 
                 // 模拟飞控控制逻辑
                 if (g_uart_real_autopilot_detected) {
                     // 有真实飞控，不需要模拟飞控，但相机消息必须继续发送
                     if (simulate_autopilot) {
-                        ss_log_i("Real autopilot detected via UART, stopping simulation but continuing camera messages");
+                        ss_log_i("Real autopilot detected via UART, stopping simulation but continuing camera messages\n");
                         simulate_autopilot = false;
                     }
                 } else if (camera_button_pressed) {
                     // 相机按键被按下，停止模拟
                     if (simulate_autopilot) {
-                        ss_log_i("Camera button pressed via UART, stopping simulation");
+                        ss_log_i("Camera button pressed via UART, stopping simulation\n");
                         simulate_autopilot = false;
                     }
                 } else if (!g_uart_qgc_connected) {
                     // QGC断开连接，重新启动模拟
                     if (!simulate_autopilot) {
-                        ss_log_i("QGC disconnected via UART, restarting simulation");
+                        ss_log_i("QGC disconnected via UART, restarting simulation\n");
                         simulate_autopilot = true;
                     }
                 }
@@ -328,16 +349,15 @@ int mavlink_uart_main(void) {
         // 检查真实飞控是否断开连接（30秒内没有收到心跳）
         if (g_uart_real_autopilot_detected && (current_time - g_uart_last_real_autopilot_hb) >= 30) {
             g_uart_real_autopilot_detected = false;
-            ss_log_i("Real autopilot connection lost via UART");
+            ss_log_i("Real autopilot connection lost via UART\n");
         }
-        #endif
         usleep(100000); // 100ms延迟，避免CPU占用过高
     }
     
     // 停止接收线程
     stop_uart_receive_thread();
     
-    ss_log_i("UART main loop exited");
+    ss_log_i("UART main loop exited\n");
     return 0;
 }
 
@@ -346,13 +366,13 @@ int mavlink_uart_main(void) {
 /* 串口专用的消息发送函数 - 适配串口通信 */
 int uart_send_message(const uint8_t* buffer, int len) {
     if (g_uart_fd < 0) {
-        ss_log_e("UART not initialized, cannot send message");
+        ss_log_e("UART not initialized, cannot send message\n");
         return -1;
     }
     
     int ret = write(g_uart_fd, buffer, len);
     if (ret != len) {
-        ss_log_e("Failed to send message via UART: %s", strerror(errno));
+        ss_log_e("Failed to send message via UART: %s\n", strerror(errno));
         return -1;
     }
     

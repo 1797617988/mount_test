@@ -99,12 +99,21 @@ int mavlink_uart_init(void);
 /* 协议特定清理函数 */
 void mavlink_udp_deinit(void);
 
+/* 标准MAVLink命令处理函数 */
+void mavlink_action_gimbal_control(void* context, const mavlink_message_t* msg);
+void mavlink_action_zoom_control(void* context, const mavlink_message_t* msg);
+void mavlink_action_camera_source(void* context, const mavlink_message_t* msg);
+void mavlink_action_camera_mode(void* context, const mavlink_message_t* msg);
+
 
 
 
 /* 线程池支持函数 */
 int mavlink_threadpool_init_simple(void);
 void mavlink_threadpool_cleanup(void);
+
+/* 命令查找函数 */
+mavlink_action_func find_command_handler(uint32_t msg_id, uint16_t command_id);
 
 /* ========================== 5. 相机捕获功能函数声明 ============================ */
 
